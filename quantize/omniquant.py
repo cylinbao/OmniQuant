@@ -4,7 +4,7 @@ from models.int_llama_layer import QuantLlamaDecoderLayer
 from models.int_opt_layer import QuantOPTDecoderLayer
 from models.int_falcon_layer import QuantFalconDecoderLayer
 from quantize.int_linear import QuantLinear
-import auto_gptq.nn_modules.qlinear.qlinear_cuda as qlinear_cuda
+# import auto_gptq.nn_modules.qlinear.qlinear_cuda as qlinear_cuda
 from contextlib import nullcontext
 import copy
 import math
@@ -252,30 +252,30 @@ def omniquant(
             qlayer.register_scales_and_zeros()
             qlayer.half()
             layers[i] = qlayer.to("cpu")
-        if args.real_quant:
-            named_linears = get_named_linears(qlayer)
-            for name, module in named_linears.items():
-                scales = module.weight_quantizer.scales
-                zeros = module.weight_quantizer.zeros
-                group_size = module.weight_quantizer.group_size
-                dim0 = module.weight.shape[0]
-                scales = scales.view(dim0,-1)
-                zeros = zeros.view(dim0,-1)
-                q_linear = qlinear_cuda.QuantLinear(args.wbits, group_size, module.in_features,module.out_features,not module.bias is None)
-                q_linear.pack(module.float().cpu(),  scales.float().cpu(), zeros.float().cpu())
-                
-                levels = name.split('.')
-                if len(levels) > 1:
-                    mod_ = qlayer
-                    for l_idx in range(len(levels)-1):
-                        if levels[l_idx].isdigit():
-                            mod_ = mod_[int(levels[l_idx])]
-                        else:
-                            mod_ = getattr(mod_, levels[l_idx])
-                    setattr(mod_, levels[-1], q_linear)
-                else:
-                    setattr(qlayer, name, q_linear)        
-                del module        
+        # if args.real_quant:
+        #     named_linears = get_named_linears(qlayer)
+        #     for name, module in named_linears.items():
+        #         scales = module.weight_quantizer.scales
+        #         zeros = module.weight_quantizer.zeros
+        #         group_size = module.weight_quantizer.group_size
+        #         dim0 = module.weight.shape[0]
+        #         scales = scales.view(dim0,-1)
+        #         zeros = zeros.view(dim0,-1)
+        #         q_linear = qlinear_cuda.QuantLinear(args.wbits, group_size, module.in_features,module.out_features,not module.bias is None)
+        #         q_linear.pack(module.float().cpu(),  scales.float().cpu(), zeros.float().cpu())
+        #         
+        #         levels = name.split('.')
+        #         if len(levels) > 1:
+        #             mod_ = qlayer
+        #             for l_idx in range(len(levels)-1):
+        #                 if levels[l_idx].isdigit():
+        #                     mod_ = mod_[int(levels[l_idx])]
+        #                 else:
+        #                     mod_ = getattr(mod_, levels[l_idx])
+        #             setattr(mod_, levels[-1], q_linear)
+        #         else:
+        #             setattr(qlayer, name, q_linear)        
+        #         del module        
         del layer
         torch.cuda.empty_cache()
 

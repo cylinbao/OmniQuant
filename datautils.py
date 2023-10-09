@@ -17,8 +17,10 @@ def get_pile(nsamples, seed, seqlen, model):
     print("get_pile")
     traindata = load_dataset("json", data_files='/cpfs01/user/chenmengzhao/prompt_quantization/val.jsonl.zst', split="train")
 
-    tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
-    trainenc = tokenizer("\n\n".join(traindata['text'][:1000]), return_tensors='pt')
+    # tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+    # trainenc = tokenizer("\n\n".join(traindata['text'][:1000]), return_tensors='pt')
+    from transformers import LlamaTokenizer 
+    tokenizer = LlamaTokenizer.from_pretrained(model, use_fast=False)
 
     random.seed(seed)
     trainloader = []
@@ -37,7 +39,9 @@ def get_wikitext2(nsamples, seed, seqlen, model):
     traindata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
     testdata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
 
-    tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+    # tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+    from transformers import LlamaTokenizer 
+    tokenizer = LlamaTokenizer.from_pretrained(model, use_fast=False)
     trainenc = tokenizer("\n\n".join(traindata['text']), return_tensors='pt')
     testenc = tokenizer("\n\n".join(testdata['text']), return_tensors='pt')
 
@@ -59,7 +63,9 @@ def get_ptb(nsamples, seed, seqlen, model):
     valdata = load_dataset('ptb_text_only', 'penn_treebank', split='validation')
 
 
-    tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+    # tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+    from transformers import LlamaTokenizer 
+    tokenizer = LlamaTokenizer.from_pretrained(model, use_fast=False)
 
     trainenc = tokenizer("\n\n".join(traindata['sentence']), return_tensors='pt')
     testenc = tokenizer("\n\n".join(valdata['sentence']), return_tensors='pt')
@@ -85,7 +91,9 @@ def get_c4(nsamples, seed, seqlen, model):
     )
 
 
-    tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+    # tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+    from transformers import LlamaTokenizer 
+    tokenizer = LlamaTokenizer.from_pretrained(model, use_fast=False)
 
     random.seed(seed)
     trainloader = []
@@ -123,7 +131,9 @@ def get_ptb_new(nsamples, seed, seqlen, model):
     testdata  = load_dataset('ptb_text_only', 'penn_treebank', split='test')
 
 
-    tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+    # tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+    from transformers import LlamaTokenizer 
+    tokenizer = LlamaTokenizer.from_pretrained(model, use_fast=False)
 
     trainenc = tokenizer(" ".join(traindata["sentence"]), return_tensors="pt")
     testenc = tokenizer(" ".join(testdata ["sentence"]), return_tensors="pt")
@@ -149,7 +159,9 @@ def get_c4_new(nsamples, seed, seqlen, model):
         'allenai/c4', 'allenai--c4',data_files={'validation': 'en/c4-validation.00000-of-00008.json.gz'}, split='validation'
     )
 
-    tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+    # tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
+    from transformers import LlamaTokenizer 
+    tokenizer = LlamaTokenizer.from_pretrained(model, use_fast=False)
     
     random.seed(seed)
     trainloader = []
