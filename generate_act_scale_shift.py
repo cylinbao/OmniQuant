@@ -136,12 +136,12 @@ def main():
     
     args.net = args.model.split('/')[-1]
     act_scales = get_act_scales(model, dataloader,args.num_samples)
-    save_path = os.path.join(args.scales_output_path,f'{args.net}.pt')
+    save_path = os.path.join(args.scales_output_path,f'{args.net}-{args.calib_dataset}.pt')
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     torch.save(act_scales, save_path)
 
     act_shifts = get_act_shifts(model, dataloader,args.num_samples)
-    save_path = os.path.join(args.shifts_output_path,f'{args.net}.pt')
+    save_path = os.path.join(args.shifts_output_path,f'{args.net}-{args.calib_dataset}.pt')
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     torch.save(act_shifts, save_path)
 

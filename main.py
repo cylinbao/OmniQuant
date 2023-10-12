@@ -309,9 +309,11 @@ def main():
 
     # act scales and shifts
     if args.act_scales is None:
-        args.act_scales = f'./act_scales/{args.net}.pt'
+        # args.act_scales = f'./act_scales/{args.net}.pt'
+        args.act_scales = f'./act_scales/{args.net}-{args.calib_dataset}.pt'
     if args.act_shifts is None:
-        args.act_shifts = f'./act_shifts/{args.net}.pt'
+        # args.act_shifts = f'./act_shifts/{args.net}.pt'
+        args.act_shifts = f'./act_shifts/{args.net}-{args.calib_dataset}.pt'
 
     # quantization
     if args.wbits < 16 or args.abits <16:
