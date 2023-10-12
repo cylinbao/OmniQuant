@@ -98,9 +98,7 @@ def get_act_shifts(model, dataloader, num_samples=128):
 
 def build_model_and_tokenizer(model_name):
     kwargs = {"torch_dtype": torch.float16, "device_map": "auto"}
-    # tokenizer = AutoTokenizer.from_pretrained(model_name)
-    from transformers import LlamaTokenizer 
-    tokenizer = LlamaTokenizer.from_pretrained(model_name, use_fast=False)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(model_name, **kwargs)
     return model, tokenizer
 
