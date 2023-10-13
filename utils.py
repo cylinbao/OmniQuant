@@ -78,3 +78,30 @@ def create_logger(output_dir, dist_rank=0, name=''):
     logger.addHandler(file_handler)
 
     return logger
+
+def get_act_orders(model, act_hessians):
+    act_orders = {}
+
+    def get_sorted_index(hessians: torch.Tensor) -> torch.tensor:
+        assert hessians.dim() == 1, "Choosing outliers must be 1 dimensional"
+        _, sorted_index = torch.sort(hessians, descending=False) # For putting outliers at last
+
+        return sorted_index
+
+    for name, m in model.named_modules():
+        if isinstance(m, torch.nn.Linear):
+            m.name = name
+
+            # Reorder Index of each layer's input
+            # Used to reorder the weight and previous layer's output
+            inputName = name + ".input"
+            act_orders[inputName] = get_sorted_index(act_hessians[inputName])
+            assert act_orders[inputName].dim() == 1, "Return Index must be 1 dimensional"
+
+            # Reorder Index of Q,K,V's output (Self-attn's input)
+            # Used to determine each head's reorder index
+            # Assume head_dim == 128
+            outputName = name + ".output"
+            act_orders[outputName] = get_sorted_index(act_hessians[outputName])
+            assert act_orders[outputName].dim() == 1, "Return Index must be 1 dimensional"
+    return act_orders

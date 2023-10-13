@@ -1,7 +1,7 @@
 import transformers
 import torch
 from .models_utils import BaseLM, find_layers
-from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM, LlamaTokenizer
 import torch.nn.functional as F
 from torch import nn
 import torch
@@ -21,7 +21,8 @@ class LMClass(BaseLM):
 
         self.model_config = args.model
         config = AutoConfig.from_pretrained(args.model)
-        self.tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False,legacy=False)
+        # self.tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False,legacy=False)
+        self.tokenizer = LlamaTokenizer.from_pretrained(args.model, use_fast=False)
         # self.model = AutoModelForCausalLM.from_pretrained(args.model, config=config, device_map='cpu',torch_dtype=config.torch_dtype)
         self.model = AutoModelForCausalLM.from_pretrained(args.model, config=config, device_map='cpu',torch_dtype=torch.float16)
         self.seqlen = self.model.config.max_position_embeddings

@@ -60,6 +60,7 @@ class QuantLlamaAttention(nn.Module):
         self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.max_position_embeddings = config.max_position_embeddings
+        self.register_buffer("reorder_index", None)
 
         if (self.head_dim * self.num_heads) != self.hidden_size:
             raise ValueError(
@@ -99,6 +100,19 @@ class QuantLlamaAttention(nn.Module):
 
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
         return tensor.view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
+
+    def to(self, *args, **kwargs):
+        super(QuantLlamaAttention, self).to(*args, **kwargs)
+        self.rotary_emb = self.rotary_emb.to(*args, **kwargs)
+        self.q_proj = self.q_proj.to(*args, **kwargs)
+        self.k_proj = self.k_proj.to(*args, **kwargs)
+        self.v_proj = self.v_proj.to(*args, **kwargs)
+        self.o_proj = self.o_proj.to(*args, **kwargs)
+        self.qkt_matmul = self.qkt_matmul.to(*args, **kwargs)
+        self.pv_matmul = self.pv_matmul.to(*args, **kwargs)
+        if self.reorder_index is not None:
+            self.reorder_index = self.reorder_index.to(*args, **kwargs)
+        return self
 
     def forward(
         self,
@@ -171,6 +185,10 @@ class QuantLlamaAttention(nn.Module):
         attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
 
+        # Reorder the BMM output to feed into o.proj
+        if self.reorder_index is not None:
+            attn_output = torch.index_select(attn_output, 2, self.reorder_index)
+
         attn_output = self.o_proj(attn_output)
 
         if not output_attentions:
@@ -209,6 +227,7 @@ class QuantLlamaDecoderLayer(nn.Module):
         )
         self.input_layernorm = OmniLlamaRMSNorm(ori_layer.input_layernorm,eps=ori_layer.input_layernorm.variance_epsilon)
         self.post_attention_layernorm = OmniLlamaRMSNorm(ori_layer.post_attention_layernorm,eps=ori_layer.post_attention_layernorm.variance_epsilon)
+        self.args = args
 
     def forward(
         self,
@@ -283,6 +302,7 @@ class QuantLlamaDecoderLayer(nn.Module):
                 for name, module in self.named_parameters():
                     if "smooth_scale" in name:
                         module.data = truncate_number(module)
+
             smooth_ln_fcs_temporary(self.input_layernorm,[self.self_attn.q_proj, self.self_attn.k_proj, self.self_attn.v_proj],
                                     self.qkv_smooth_scale,self.qkv_smooth_shift)
             smooth_ln_fcs_temporary(self.post_attention_layernorm,[self.mlp.up_proj,self.mlp.gate_proj],
@@ -319,6 +339,7 @@ class QuantLlamaDecoderLayer(nn.Module):
             for name, module in self.named_parameters():
                 if "smooth_scale" in name:
                     module.data = truncate_number(module)
+
             smooth_ln_fcs_inplace(self.input_layernorm,[self.self_attn.q_proj, self.self_attn.k_proj, self.self_attn.v_proj],
                                     self.qkv_smooth_scale,self.qkv_smooth_shift)
             smooth_ln_fcs_inplace(self.post_attention_layernorm,[self.mlp.up_proj,self.mlp.gate_proj],
@@ -367,3 +388,66 @@ class QuantLlamaDecoderLayer(nn.Module):
         for name, module in self.named_modules():
             if isinstance(module, QuantLinear):
                 module.weight_quantizer.register_scales_and_zeros()
+    
+    def reorder_layer(self, i, act_orders):
+        nameTemplate = 'model.layers.{}.{}.{}.{}' # Something like layers.10.self_attn.q_proj
+
+        # self.mlp.gate_proj.reorder(
+        #     in_reorder_index=act_orders[nameTemplate.format(i, 'mlp', 'gate_proj', 'input')],
+        #     out_reorder_index=act_orders[nameTemplate.format(i, 'mlp', 'down_proj', 'input')]
+        # )
+        # self.mlp.up_proj.reorder(
+        #     # in_reorder_index=act_orders[nameTemplate.format(i, 'mlp', 'up_proj', 'input')],
+        #     in_reorder_index=act_orders[nameTemplate.format(i, 'mlp', 'gate_proj', 'input')],
+        #     out_reorder_index=act_orders[nameTemplate.format(i, 'mlp', 'down_proj', 'input')]
+        # )
+        # self.mlp.down_proj.reorder(
+        #     in_reorder_index=act_orders[nameTemplate.format(i, 'mlp', 'down_proj', 'input')],
+        #     out_reorder_index=None
+        # )
+        # K has outlier should be kept.
+        # Not reorder due to the RoPE embedding.
+        self.self_attn.q_proj.reorder(
+            # in_reorder_index=act_orders[nameTemplate.format(i, 'self_attn', 'q_proj', 'input')],
+            in_reorder_index=act_orders[nameTemplate.format(i, 'self_attn', 'k_proj', 'input')],
+            out_reorder_index=None
+        )
+        self.self_attn.k_proj.reorder(
+            in_reorder_index=act_orders[nameTemplate.format(i, 'self_attn', 'k_proj', 'input')],
+            out_reorder_index=None
+        )
+        self.self_attn.v_proj.reorder(
+            # in_reorder_index=act_orders[nameTemplate.format(i, 'self_attn', 'v_proj', 'input')],
+            in_reorder_index=act_orders[nameTemplate.format(i, 'self_attn', 'k_proj', 'input')],
+            out_reorder_index=None
+        )
+        # self.self_attn.o_proj.reorder(
+        #     in_reorder_index=act_orders[nameTemplate.format(i, 'self_attn', 'o_proj', 'input')],
+        #     out_reorder_index=None
+        # )
+        self.input_layernorm.register_buffer('reorder_index', 
+            act_orders[nameTemplate.format(i, 'self_attn', 'k_proj', 'input')] # Random choose one from k,q,v proj.
+        )
+        # self.post_attention_layernorm.register_buffer('reorder_index',
+        #     act_orders[nameTemplate.format(i, 'mlp', 'gate_proj', 'input')]
+        # )
+        # self.self_attn.register_buffer('reorder_index', act_orders[nameTemplate.format(i, 'self_attn', 'o_proj', 'input')])
+
+        self.k_proj_order = act_orders[nameTemplate.format(i, 'self_attn', 'k_proj', 'input')]
+        # self.o_proj_order = act_orders[nameTemplate.format(i, 'self_attn', 'o_proj', 'input')]
+        # self.gate_proj_order = act_orders[nameTemplate.format(i, 'mlp', 'gate_proj', 'input')]
+        # self.down_proj_order = act_orders[nameTemplate.format(i, 'mlp', 'down_proj', 'input')]
+
+    def reorder_omni_parameters(self):
+        for name, param in self.named_parameters():
+            # print(name, param.shape)
+            if "q_proj" in name or "k_proj" in name or "v_proj" in name or "qkv" in name:
+                param = param[self.k_proj_order]
+            # elif "out" in name or "o_proj" in name:
+            #     param = param[self.o_proj_order]
+            # elif "gate_proj" in name or "fc1" in name or "up_proj" in name:
+            #     param = param[self.gate_proj_order]
+            # elif "down_proj" in name:
+            #     param = param[self.down_proj_order]
+            # print(name, param.shape)
+            # breakpoint()

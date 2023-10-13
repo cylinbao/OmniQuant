@@ -68,7 +68,7 @@ def smooth_q_k_temporary(q_proj, k_proj, scales):
     k_proj.temp_weight = k_proj.temp_weight*scales.view(-1,1)
     k_proj.temp_bias = k_proj.temp_bias*scales.view(-1)
 
-def smooth_ln_fcs_inplace(ln, fcs, scales,shifts):
+def smooth_ln_fcs_inplace(ln, fcs, scales, shifts):
     ln.use_temporary_parameter = False
     if not isinstance(fcs, list):
         fcs = [fcs]

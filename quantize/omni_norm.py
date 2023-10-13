@@ -44,6 +44,7 @@ class OmniLlamaRMSNorm(nn.Module):
         """
         super().__init__()
         self.register_buffer('weight',ori_norm.weight)
+        self.register_buffer("reorder_index", None)
         self.bias = None
         self.variance_epsilon = eps
         self.use_temporary_parameter = False
@@ -59,6 +60,24 @@ class OmniLlamaRMSNorm(nn.Module):
         else:
             weight = self.weight
             bias = self.bias if hasattr(self, 'bias') else None
+        
+        if bias is not None:
+            result = (weight * hidden_states+bias).to(input_dtype)
+        else:
+            result = (weight * hidden_states).to(input_dtype)
 
-        return (weight * hidden_states+bias).to(input_dtype) if bias is not None else (weight * hidden_states).to(input_dtype)
+        if self.reorder_index is not None:
+            assert result.shape[result.dim()-1] == self.reorder_index.shape[0]
+            result = torch.index_select(result, result.dim()-1, self.reorder_index)
+
+        return result
+    
+    def to(self, *args, **kwargs):
+        super(OmniLlamaRMSNorm, self).to(*args, **kwargs)
+        self.weight = self.weight.to(*args, **kwargs)
+        if self.bias is not None:
+            self.bias = self.bias.to(*args, **kwargs)
+        if self.reorder_index is not None:
+            self.reorder_index = self.reorder_index.to(*args, **kwargs)
+        return self
 

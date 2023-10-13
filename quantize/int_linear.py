@@ -67,3 +67,11 @@ class QuantLinear(nn.Module):
     def set_quant_state(self, weight_quant: bool = False, act_quant: bool = False):
         self.use_weight_quant = weight_quant
         self.use_act_quant = act_quant
+
+    def reorder(self, in_reorder_index, out_reorder_index=None):
+        in_reorder_index = in_reorder_index.to(self.weight.device)
+        self.weight = torch.index_select(self.weight, 1, in_reorder_index)
+
+        if out_reorder_index is not None:
+            out_reorder_index = out_reorder_index.to(self.weight.device)
+            self.weight = torch.index_select(self.weight, 0, out_reorder_index)

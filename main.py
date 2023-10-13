@@ -95,7 +95,8 @@ def evaluate(lm, args, logger):
 
 
     if args.eval_ppl:
-        for dataset in ["wikitext2", "ptb", "c4","ptb-new",'c4-new']:
+        # for dataset in ["wikitext2", "ptb", "c4","ptb-new",'c4-new']:
+        for dataset in ["wikitext2"]:
             cache_testloader = f'{args.cache_dir}/testloader_{args.model_family}_{dataset}_all.cache'
             if os.path.exists(cache_testloader):
                 testloader = torch.load(cache_testloader)
@@ -227,6 +228,8 @@ def main():
     parser.add_argument("--net", type=str, default=None, choices=net_choices)
     parser.add_argument("--act-scales", type=str, default=None)
     parser.add_argument("--act-shifts", type=str, default=None)
+    parser.add_argument("--act-hessians", type=str, default=None)
+    parser.add_argument("--mix",default=False, action="store_true",help="activate mix precision")
 
     args = parser.parse_args()
     random.seed(args.seed)
@@ -309,11 +312,11 @@ def main():
 
     # act scales and shifts
     if args.act_scales is None:
-        # args.act_scales = f'./act_scales/{args.net}.pt'
         args.act_scales = f'./act_scales/{args.net}-{args.calib_dataset}.pt'
     if args.act_shifts is None:
-        # args.act_shifts = f'./act_shifts/{args.net}.pt'
         args.act_shifts = f'./act_shifts/{args.net}-{args.calib_dataset}.pt'
+    if args.act_hessians is None:
+        args.act_hessians = f'./act_hessians/{args.net}-{args.calib_dataset}.pt'
 
     # quantization
     if args.wbits < 16 or args.abits <16:
@@ -335,15 +338,20 @@ def main():
             torch.save(dataloader, cache_dataloader)    
         act_scales = None
         act_shifts = None
+        act_orders = None
         if args.let:
-            act_scales = torch.load(args.act_scales)
-            act_shifts = torch.load(args.act_shifts)
+            act_scales = torch.load(args.act_scales, map_location=lm.device)
+            act_shifts = torch.load(args.act_shifts, map_location=lm.device)
+        if args.mix:
+            act_hessians = torch.load(args.act_hessians, map_location=lm.device)
+            act_orders = utils.get_act_orders(lm.model, act_hessians)
         omniquant(
             lm,
             args,
             dataloader,
             act_scales,
             act_shifts,
+            act_orders,
             logger,
         )
         logger.info(time.time() - tick)

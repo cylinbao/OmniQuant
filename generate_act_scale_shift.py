@@ -1,4 +1,5 @@
 import torch
+import math
 import os
 
 from transformers import (
@@ -21,6 +22,44 @@ except ImportError:
 # import pdb
 
 
+def get_act_hessian(model, dataloader, num_samples=128):
+    model.eval()
+    device = next(model.parameters()).device
+    act_hessians = {}
+
+    def stat_tensor(name, tensor):
+        hidden_dim = tensor.shape[-1]
+        tensor = tensor.view(-1, hidden_dim).detach()
+        tensorH = math.sqrt(2 / num_samples) * tensor.float().t()
+        comming_H = tensorH.matmul(tensorH.t())
+        comming_H = torch.diag(comming_H)
+
+        if name in act_hessians:
+            act_hessians[name] += comming_H 
+        else:
+            act_hessians[name] = comming_H
+
+    def stat_input_hook(m, x, y, name):
+        if isinstance(x, tuple):
+            x = x[0]
+        # stat_tensor(name, x)
+        stat_tensor(name + ".input", x)
+        stat_tensor(name + ".output", y)
+
+    hooks = []
+    for name, m in model.named_modules():
+        if isinstance(m, nn.Linear):
+            hooks.append(
+                m.register_forward_hook(
+                    functools.partial(stat_input_hook, name=name)))
+
+    for i in tqdm(range(num_samples)):
+        model(dataloader[i][0].to(device))
+
+    for h in hooks:
+        h.remove()
+
+    return act_hessians
 
 def get_act_scales(model, dataloader, num_samples=128):
     model.eval()
@@ -98,7 +137,9 @@ def get_act_shifts(model, dataloader, num_samples=128):
 
 def build_model_and_tokenizer(model_name):
     kwargs = {"torch_dtype": torch.float16, "device_map": "auto"}
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # tokenizer = AutoTokenizer.from_pretrained(model_name)
+    from transformers import LlamaTokenizer 
+    tokenizer = LlamaTokenizer.from_pretrained(model_name, use_fast=False)
     model = AutoModelForCausalLM.from_pretrained(model_name, **kwargs)
     return model, tokenizer
 
@@ -109,6 +150,8 @@ def parse_args():
     parser.add_argument('--scales-output-path', type=str, default='./act_scales/',
                         help='where to save the act scales')
     parser.add_argument('--shifts-output-path', type=str, default='./act_shifts/',
+                        help='where to save the act shifts')
+    parser.add_argument('--hessians-output-path', type=str, default='./act_hessians/',
                         help='where to save the act shifts')
     parser.add_argument("--calib_dataset",type=str,default="wikitext2",
         choices=["wikitext2", "ptb", "c4", "mix","pile"],
@@ -142,6 +185,11 @@ def main():
     save_path = os.path.join(args.shifts_output_path,f'{args.net}-{args.calib_dataset}.pt')
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     torch.save(act_shifts, save_path)
+
+    act_hessians = get_act_hessian(model, dataloader,args.num_samples)
+    save_path = os.path.join(args.hessians_output_path,f'{args.net}-{args.calib_dataset}.pt')
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    torch.save(act_hessians, save_path)
 
 
 if __name__ == '__main__':

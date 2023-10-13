@@ -25,6 +25,7 @@ def omniquant(
     dataloader,
     act_scales,
     act_shifts,
+    act_orders,
     logger=None,
 ):
     logger.info("Starting ...")
@@ -152,14 +153,17 @@ def omniquant(
     else:
         omni_parameters = {}
 
-    
-    
+
     for i in range(len(layers)):
         logger.info(f"=== Start quantize layer {i} ===")
         layer = layers[i].to(dev)
         qlayer = DecoderLayer(lm.model.config, layer, args)
         qlayer = qlayer.to(dev)
 
+        qlayer.set_quant_state(weight_quant=False, act_quant=False)
+        if args.mix:
+            assert act_orders is not None, "Please load act_orders"
+            qlayer.reorder_layer(i, act_orders)
         
         # obtain output of full-precision model
         qlayer.set_quant_state(weight_quant=False, act_quant=False)
@@ -187,17 +191,24 @@ def omniquant(
                     for key in pairs.keys():
                         if key in name:
                             act = act_scales[f"{layer_name_prefix}.{i}.{name}"].to(device=dev, dtype=dtype).clamp(min=1e-5)
+                            # reorder
+                            if args.mix:
+                                act = act[act_orders[f"{layer_name_prefix}.{i}.{name}.input"]]
                             weight = module.weight.max(dim=0)[0].clamp(min=1e-5)
                             scale = (act.pow(args.alpha)/weight.pow(1-args.alpha)).clamp(min=1e-5)
                             if use_shift and not is_llama:
                                 shift = act_shifts[f"{layer_name_prefix}.{i}.{name}"].to(device=dev, dtype=dtype)
                             else:
                                 shift = torch.zeros_like(scale)
+                            if args.mix:
+                                shift = shift[act_orders[f"{layer_name_prefix}.{i}.{name}.input"]]
                             qlayer.register_parameter(f"{pairs[key]}_smooth_shift",torch.nn.Parameter(shift))
                             qlayer.register_parameter(f"{pairs[key]}_smooth_scale",torch.nn.Parameter(scale))
                                 
         if args.resume:
             qlayer.load_state_dict(omni_parameters[i], strict=False)
+            if args.mix:
+                qlayer.reorder_omni_parameters()
         
 
         if args.epochs > 0:
@@ -252,6 +263,7 @@ def omniquant(
             qlayer.register_scales_and_zeros()
             qlayer.half()
             layers[i] = qlayer.to("cpu")
+
         # if args.real_quant:
         #     named_linears = get_named_linears(qlayer)
         #     for name, module in named_linears.items():
